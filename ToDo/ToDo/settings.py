@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-q88+zg%oi2bfhn^=zy$eliduv3v*d-#^l$3ss#i&5^k5py70o9
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'backend']
 
 
 # Application definition
@@ -145,6 +145,6 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=7),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ACCESS_TOKEN_LIFETIME": timedelta(weeks=90),
+    "REFRESH_TOKEN_LIFETIME": timedelta(weeks=180),
 }

@@ -42,6 +42,8 @@ services:
     depends_on:
       - redis
       - db
+    environment:
+      - DJANGO_SETTINGS_MODULE=ToDo.settings
 
   celery-beat:
     build: .
@@ -51,6 +53,19 @@ services:
     depends_on:
       - redis
       - db
+    environment:
+      - DJANGO_SETTINGS_MODULE=ToDo.settings
+
+  bot:
+    build: .
+    command: python bot/bot.py
+    volumes:
+      - .:/app
+    depends_on:
+      - backend
+      - redis
+    env_file:
+      - .env
 
 volumes:
   postgres_data:

@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import Task, Tag
 
@@ -39,3 +40,18 @@ class TaskSerializer(serializers.ModelSerializer):
                 tag, _ = Tag.objects.get_or_create(name=tag_name)
                 instance.tags.add(tag)
         return instance
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, min_length=1)
+
+    class Meta:
+        model = User
+        fields = ('username', 'password')
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            password=validated_data['password']
+        )
+        return user

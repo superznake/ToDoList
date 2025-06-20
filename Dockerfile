@@ -1,4 +1,4 @@
-FROM python:3.12
+FROM python:3.12-slim
 WORKDIR /app
 COPY req.txt ./req.txt
 RUN pip install --no-cache-dir -r req.txt

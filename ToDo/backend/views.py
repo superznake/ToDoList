@@ -1,6 +1,7 @@
-from rest_framework import viewsets, permissions
+from django.contrib.auth.models import User
+from rest_framework import viewsets, permissions, generics
 from .models import Task, Tag
-from .serializers import TaskSerializer, TagSerializer
+from .serializers import TaskSerializer, TagSerializer, RegisterSerializer
 
 
 class TagViewSet(viewsets.ModelViewSet):
@@ -20,3 +21,8 @@ class TaskViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # При создании задачи автоматически ставим текущего пользователя
         serializer.save(user=self.request.user)
+
+
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = RegisterSerializer
