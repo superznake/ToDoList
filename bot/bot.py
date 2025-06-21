@@ -1,16 +1,17 @@
 import asyncio
 import os
 from datetime import datetime
+from typing import Dict, Any
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.client.session import aiohttp
-from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram_dialog import Dialog, DialogManager, Window, StartMode, setup_dialogs
 from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.kbd import Button, Cancel, Back, Row, Column
-from aiogram_dialog.widgets.text import Const, Format
+from aiogram_dialog.widgets.text import Const, Format, Text
+
+from api import get_token, register, create_task, get_tasks
 
 import logging
 
@@ -33,11 +34,11 @@ class DialogStates(StatesGroup):
     up_password_check = State()
     fast_in = State()
     menu = State()
-    task_name = State()
-    task_description = State()
-    task_tags = State()
-    task_deadline = State()
-    addd = State()
+    task_name_input = State()
+    task_description_input = State()
+    task_tags_input = State()
+    task_deadline_input = State()
+    task_confirm = State()
 
 
 async def get_username_data(dialog_manager: DialogManager, **kwargs):
@@ -46,6 +47,26 @@ async def get_username_data(dialog_manager: DialogManager, **kwargs):
 
 async def get_password_data(dialog_manager: DialogManager, **kwargs):
     return {"password": dialog_manager.dialog_data.get("password", "error")}
+
+
+async def get_task_data(dialog_manager: DialogManager, **kwargs):
+    result = {
+        "task_name": dialog_manager.dialog_data.get("task_name")
+    }
+    for key in ["task_description", "task_tags", "task_deadline"]:
+        if key in dialog_manager.dialog_data:
+            result[key] = dialog_manager.dialog_data.get(key)
+    return result
+
+
+async def confirm_getter(dialog_manager: DialogManager, **kwargs):
+    result = {
+        "task_name": dialog_manager.dialog_data.get("task_name"),
+        "task_description": dialog_manager.dialog_data.get("task_description", "Не указано"),
+        "task_tags": dialog_manager.dialog_data.get("task_tags", "Не указаны"),
+        "task_deadline": dialog_manager.dialog_data.get("task_deadline", "Не указан"),
+    }
+    return result
 
 
 # Обработчик нажатия на кастомную кнопку
@@ -105,7 +126,7 @@ async def on_up_password_repeated(message: types.Message, widget: MessageInput, 
             await message.answer(f"Пользователь {check}, зарегистрирован")
             await dialog_manager.next()
 
-            
+
 async def on_fast_in_click(callback: types.CallbackQuery, button: Button, dialog_manager: DialogManager):
     access_token = await get_token(dialog_manager.dialog_data.get("username"),
                                    dialog_manager.dialog_data.get("password"))
@@ -118,12 +139,56 @@ async def on_fast_in_click(callback: types.CallbackQuery, button: Button, dialog
         await dialog_manager.switch_to(DialogStates.menu)
 
 
-async def on_all_tasks_click():
-    ...
+async def on_all_tasks_click(callback: types.CallbackQuery, button: Button, dialog_manager: DialogManager):
+    tasks = await get_tasks(access_token=users[callback.message.chat.id])
+    for task in tasks:
+        text = "Название задачи: " + task["name"]
+        if task["description"] != "":
+            text += "\nОписание: " + task["description"]
+        if task["deadline"] is not None:
+            text += "\nСрок: " + task["deadline"]
+        if task["tags_info"] != []:
+            text += "\nТеги: " + ", ".join(tag["name"] for tag in task["tags_info"])
+        text += "\n\nЗадача создана: " + datetime.fromisoformat(task["created_at"]).strftime("%d.%m.%Y %H:%M")
+        await callback.message.answer(text=text)
 
 
-async def on_create_task_click():
-    ...
+async def on_skip_click(callback: types.CallbackQuery, button: Button, dialog_manager: DialogManager):
+    await dialog_manager.next()
+
+
+async def on_task_name_entered(message: types.Message, widget: MessageInput, dialog_manager: DialogManager):
+    dialog_manager.dialog_data["task_name"] = message.text
+    await dialog_manager.next()
+
+
+async def on_task_description_entered(message: types.Message, widget: MessageInput, dialog_manager: DialogManager):
+    dialog_manager.dialog_data["task_description"] = message.text
+    await dialog_manager.next()
+
+
+async def on_task_tags_entered(message: types.Message, widget: MessageInput, dialog_manager: DialogManager):
+    dialog_manager.dialog_data["task_tags"] = message.text
+    await dialog_manager.next()
+
+
+async def on_task_deadline_entered(message: types.Message, widget: MessageInput, dialog_manager: DialogManager):
+    dialog_manager.dialog_data["task_deadline"] = message.text
+    await dialog_manager.next()
+
+
+async def on_create_task_click(callback: types.CallbackQuery, button: Button, dialog_manager: DialogManager):
+    await dialog_manager.switch_to(DialogStates.task_name_input)
+
+
+async def on_confirm_click(callback: types.CallbackQuery, button: Button, dialog_manager: DialogManager):
+    data = await get_task_data(dialog_manager)
+    await create_task(access_token=users[callback.message.chat.id],
+                      name=data["task_name"],
+                      description=data.get("task_description", ""),
+                      tags=data.get("task_tags", ""),
+                      deadline=data.get("task_deadline", ""))
+    await dialog_manager.switch_to(DialogStates.menu)
 
 
 # Создаем диалог
@@ -193,7 +258,7 @@ dialog = Dialog(
         getter=get_username_data,
         state=DialogStates.fast_in,
     ),
-    Window( # Главное меню
+    Window(  # Главное меню
         Const("Главное меню"),
         Column(
             Button(
@@ -209,59 +274,72 @@ dialog = Dialog(
         ),
         state=DialogStates.menu
     ),
-    Window(
-        Const("sada"),
-        Row(
+    Window(  # Создание задачи
+        Const("Введите название задачи:"),
+        Back(Const("↩️ Назад")),
+        MessageInput(on_task_name_entered),
+        state=DialogStates.task_name_input),
+    Window(  # Создание задачи
+        Const("Введите описание"),
+        Column(
             Back(Const("↩️ Назад")),
             Button(
-                Const("📅 Показать дату"),
-                id="show_date",
-                on_click=on_show_date_click
-            )),
-        state=DialogStates.addd
-    )
+                Const("Пропустить этап"),
+                id="skip",
+                on_click=on_skip_click,
+            )
+        ),
+        MessageInput(on_task_description_entered),
+        state=DialogStates.task_description_input
+    ),
+    Window(  # Создание задачи
+        Const("Введите теги через запятую"),
+        Column(
+            Back(Const("↩️ Назад")),
+            Button(
+                Const("Пропустить этап"),
+                id="skip",
+                on_click=on_skip_click,
+            )
+        ),
+        MessageInput(on_task_tags_entered),
+        state=DialogStates.task_tags_input
+    ),
+    Window(  # Создание задачи
+        Const("Введите дедлайн в формате YYYY-MM-DD"),
+        Column(
+            Back(Const("↩️ Назад")),
+            Button(
+                Const("Пропустить этап"),
+                id="skip",
+                on_click=on_skip_click,
+            )
+        ),
+        MessageInput(on_task_deadline_entered),
+        state=DialogStates.task_deadline_input
+    ),
+    Window(  # Создание задачи
+        Format(
+            "Задача: {task_name}\n"
+            "Описание: {task_description}\n"
+            "Теги: {task_tags}\n"
+            "Дедлайн: {task_deadline}\n"),
+        Column(
+            Back(Const("↩️ Назад")),
+            Button(
+                Const("Подтвердить"),
+                id="confirm",
+                on_click=on_confirm_click,
+            )
+        ),
+        getter=confirm_getter,
+        state=DialogStates.task_confirm
+    ),
 )
 
 
-# Хендлер команды /start
 async def start_cmd(message: types.Message, dialog_manager: DialogManager):
     await dialog_manager.start(DialogStates.main, mode=StartMode.RESET_STACK)
-
-
-async def get_token(user: str, password: str):
-    url = "http://backend:8000/api/token/"
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    data = {
-        "username": user,
-        "password": password
-    }
-    logging.info(f"{data}, {headers}, {url}")
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as response:
-            logging.info(response)
-            if response.status == 200:
-                return await response.json()  # Возвращает JSON-ответ (например, {"token": "..."})
-            elif response.status == 400:
-                return "error"
-            else:
-                raise Exception(f"Ошибка API: {response.status}")
-
-
-async def register(user: str, password: str):
-    url = "http://backend:8000/api/register/"
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "username": user,
-        "password": password
-    }
-    logging.info(f"{user}:{password}, {url}")
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as response:
-            logging.info(response)
-            if response.status == 201:
-                return await response.json()  # Возвращает JSON-ответ (например, {"token": "..."})
-            else:
-                raise Exception(f"Ошибка API: {response.status}")
 
 
 async def main():

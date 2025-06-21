@@ -16,7 +16,7 @@ class Task(models.Model):
     tags = models.ManyToManyField(Tag, blank=True, related_name='tasks')
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     deadline = models.DateField(null=True, blank=True)
-    done = models.BooleanField(auto_created=False)
+    done = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
